@@ -6,3 +6,13 @@ __pycache__/
 node_modules/
 dist/
 reports/*.csv
+.env
+
+# Local editor/system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
