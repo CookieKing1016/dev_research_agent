@@ -1,12 +1,20 @@
+# Python
 .venv/
 .deps/
 __pycache__/
 *.py[cod]
 *.sqlite3
+
+# Frontend
 node_modules/
 dist/
-reports/*.csv
+
+# Local env / secrets
 .env
+.env.*
+
+# Generated reports
+reports/*.csv
 
 # Local editor/system files
 .vscode/
