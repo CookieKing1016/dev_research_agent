@@ -1,0 +1,22 @@
+[
+  {"id": "E01", "task_type": "repo_analysis", "query": "分析 LangGraph 项目的核心架构，并生成适合实习面试讲解的技术报告"},
+  {"id": "E02", "task_type": "repo_analysis", "query": "分析 AgentScope 的多智能体协作机制和 MCP 工具接入方式"},
+  {"id": "E03", "task_type": "issue_analysis", "query": "给定一个 GitHub Issue，定位可能相关的入口文件、风险点和测试建议"},
+  {"id": "E04", "task_type": "research_report", "query": "比较 LangGraph、AgentScope、CrewAI 在 ReAct 工具调用上的差异"},
+  {"id": "E05", "task_type": "jd_gap", "query": "根据 Agent 实习 JD 分析我还需要补充哪些项目能力"},
+  {"id": "E06", "task_type": "research_report", "query": "生成一份 MCP Server 工具抽象的技术调研报告"},
+  {"id": "E07", "task_type": "repo_analysis", "query": "分析一个 RAG 项目的检索链路、chunk 策略和 rerank 位置"},
+  {"id": "E08", "task_type": "issue_analysis", "query": "用户反馈报告没有引用来源，分析 Agent 应该如何修复"},
+  {"id": "E09", "task_type": "research_report", "query": "设计 Agentic Eval 指标体系，覆盖工具调用准确率和引用支撑率"},
+  {"id": "E10", "task_type": "repo_analysis", "query": "分析 FastAPI + WebSocket 如何展示 Agent 执行 trace"},
+  {"id": "E11", "task_type": "research_report", "query": "解释 BM25 + Dense Retrieval + RRF 混合检索为什么适合长文档问答"},
+  {"id": "E12", "task_type": "issue_analysis", "query": "一个 Agent 工具调用频繁超时，输出排查路径和降级方案"},
+  {"id": "E13", "task_type": "repo_analysis", "query": "分析一个开源项目的 README、依赖、启动入口和 Docker 运行路径"},
+  {"id": "E14", "task_type": "research_report", "query": "生成多 Agent 研发报告系统的 PRD 和模块拆分"},
+  {"id": "E15", "task_type": "jd_gap", "query": "将项目经历改写成命中 Byte Agent 架构与基建岗位的简历 bullet"},
+  {"id": "E16", "task_type": "research_report", "query": "设计 CriticAgent 的事实核查规则和重规划触发条件"},
+  {"id": "E17", "task_type": "repo_analysis", "query": "分析 SQLite 如何保存任务、trace、eval 结果并支持回放"},
+  {"id": "E18", "task_type": "research_report", "query": "比较 DeepEval 和 RAGAS 在 RAG/Agent 评测里的适用场景"},
+  {"id": "E19", "task_type": "issue_analysis", "query": "输入一个性能问题 Issue，输出相关模块、可能瓶颈和验证实验"},
+  {"id": "E20", "task_type": "research_report", "query": "为多 Agent 深度研究系统生成最终演示脚本和面试 Q&A"}
+]
