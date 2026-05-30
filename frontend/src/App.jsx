@@ -3,6 +3,8 @@ import { Activity, Brain, FileText, Play, ShieldCheck } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
+const apiBase = "http://127.0.0.1:8000";
+
 const examples = [
   "Analyze https://github.com/langchain-ai/langgraph and generate an interview-ready architecture report.",
   "Analyze the skill gaps for a ByteDance Agent infrastructure internship JD.",
@@ -20,6 +22,8 @@ function App() {
   const [query, setQuery] = useState(examples[0]);
   const [events, setEvents] = useState([]);
   const [result, setResult] = useState(null);
+  const [taskId, setTaskId] = useState(null);
+  const [artifacts, setArtifacts] = useState([]);
   const [running, setRunning] = useState(false);
   const socketRef = useRef(null);
 
@@ -28,6 +32,8 @@ function App() {
   function runTask() {
     setEvents([]);
     setResult(null);
+    setTaskId(null);
+    setArtifacts([]);
     setRunning(true);
 
     const socket = new WebSocket("ws://127.0.0.1:8000/ws/run");
@@ -41,6 +47,8 @@ function App() {
       const event = JSON.parse(message.data);
       if (event.stage === "done") {
         setResult(event.result);
+        setTaskId(event.task_id);
+        setArtifacts(event.artifacts || []);
         setRunning(false);
         socket.close();
         return;
@@ -111,6 +119,26 @@ function App() {
               <p className="empty">The score appears after the task finishes.</p>
             )}
           </div>
+        </section>
+
+        <section className="panel artifacts">
+          <h2>Artifacts</h2>
+          {artifacts.length > 0 ? (
+            <div className="artifactList">
+              {artifacts.map((artifact) => (
+                <a
+                  key={artifact.name}
+                  href={`${apiBase}/tasks/${taskId}/artifacts/${artifact.name}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {artifact.name}
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="empty">Artifacts will appear after a run finishes.</p>
+          )}
         </section>
 
         <section className="panel report">

@@ -44,18 +44,11 @@ def score_report(
     citation_support = score_citation_support(cited_indices, evidence)
     report_completeness = score_report_completeness(report)
     factual_consistency = score_factual_consistency(critique, citation_support)
-
     total = (
         tool_call_accuracy * 0.2
         + citation_support * 0.3
         + report_completeness * 0.25
         + factual_consistency * 0.25
-    )
-    badcase = build_badcase(
-        tool_call_accuracy=tool_call_accuracy,
-        citation_support=citation_support,
-        report_completeness=report_completeness,
-        factual_consistency=factual_consistency,
     )
     return {
         "tool_call_accuracy": round(tool_call_accuracy, 2),
@@ -63,7 +56,12 @@ def score_report(
         "report_completeness": round(report_completeness, 2),
         "factual_consistency": round(factual_consistency, 2),
         "total_score": round(total * 5, 2),
-        "badcase": badcase,
+        "badcase": build_badcase(
+            tool_call_accuracy=tool_call_accuracy,
+            citation_support=citation_support,
+            report_completeness=report_completeness,
+            factual_consistency=factual_consistency,
+        ),
         "query_preview": query[:80],
     }
 
@@ -105,17 +103,10 @@ Return JSON with exactly these fields:
   "factual_consistency": 0.0,
   "badcase": ["short issue description"]
 }}
-
-Rubric:
-- tool_call_accuracy: whether retrieved evidence is relevant and sufficient for the task.
-- citation_support: whether claims in the report are backed by cited evidence like [1].
-- report_completeness: whether the report covers task, architecture/analysis, evidence, reproduction/reading path, improvement/risks.
-- factual_consistency: whether the report avoids unsupported claims and follows the evidence.
 """
     try:
         payload = await llm.json_chat(system, user, temperature=0.0, max_tokens=900)
-        score = normalize_judge_payload(query, payload)
-        return {"ok": True, "score": score, "error": None}
+        return {"ok": True, "score": normalize_judge_payload(query, payload), "error": None}
     except Exception as exc:
         return {"ok": False, "score": None, "error": compact_error(exc)}
 
@@ -154,8 +145,7 @@ def score_citation_support(cited_indices: set[int], evidence: list[dict[str, Any
     if not evidence:
         return 0.0
     valid_citations = {idx for idx in cited_indices if 1 <= idx <= len(evidence)}
-    coverage = len(valid_citations) / min(len(evidence), 4)
-    return min(coverage, 1.0)
+    return min(len(valid_citations) / min(len(evidence), 4), 1.0)
 
 
 def score_report_completeness(report: str) -> float:
@@ -216,5 +206,4 @@ def string_list(value: Any) -> list[str]:
 
 
 def compact_error(exc: Exception) -> str:
-    text = f"{type(exc).__name__}: {exc}"
-    return text[:500]
+    return f"{type(exc).__name__}: {exc}"[:500]

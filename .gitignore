@@ -12,9 +12,11 @@ dist/
 # Local env / secrets
 .env
 .env.*
+!.env.example
 
 # Generated reports
 reports/*.csv
+sessions/
 
 # Local editor/system files
 .vscode/

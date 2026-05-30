@@ -30,6 +30,24 @@ $env:LLM_MODEL="gpt-4o-mini"
 
 Any OpenAI-compatible `/chat/completions` provider can be used. For example,
 DeepSeek, DashScope compatible mode, SiliconFlow, local proxies, or OpenAI.
+The app also accepts `LLM_MODEL_ID` for compatibility with older examples.
+
+For a local `.env` file:
+
+```powershell
+cd F:\hello_agents\dev_research_agent_clean\backend
+copy .env.example .env
+```
+
+Then edit `backend/.env`:
+
+```env
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+```
+
+`backend/.env` is ignored by Git. Do not commit real API keys.
 
 ## Quick Start
 
@@ -57,6 +75,26 @@ Eval:
 cd F:\hello_agents\dev_research_agent\backend
 python -m app.eval.run_cases --cases ..\data\eval_cases.json --out ..\reports\eval_scores.csv
 ```
+
+## Run Artifacts
+
+Each completed run writes a session workspace:
+
+```text
+sessions/{task_id}/
+├── query.txt
+├── plan.json
+├── evidence.json
+├── trace.json
+├── report.md
+├── critique.json
+├── eval.json
+└── trajectory.jsonl
+```
+
+The frontend shows an Artifacts panel after each run. You can download
+`report.md`, `trace.json`, `eval.json`, and the trajectory file for debugging,
+review, or future SFT/GRPO dataset construction.
 
 ## Resume Version
 

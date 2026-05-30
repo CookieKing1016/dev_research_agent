@@ -23,13 +23,7 @@ class LLMConfig:
 
 
 class LLMClient:
-    """Small OpenAI-compatible chat completions client.
-
-    Configure with:
-    - LLM_API_KEY
-    - LLM_BASE_URL, default https://api.openai.com/v1
-    - LLM_MODEL, default gpt-4o-mini
-    """
+    """Small OpenAI-compatible chat completions client."""
 
     def __init__(self) -> None:
         if load_dotenv:
@@ -53,13 +47,7 @@ class LLMClient:
     ) -> str:
         if not self.enabled:
             raise RuntimeError("LLM_API_KEY is not configured")
-        return await asyncio.to_thread(
-            self._chat_sync,
-            system,
-            user,
-            temperature,
-            max_tokens,
-        )
+        return await asyncio.to_thread(self._chat_sync, system, user, temperature, max_tokens)
 
     async def json_chat(
         self,
@@ -73,9 +61,8 @@ class LLMClient:
         return parse_json_object(text)
 
     def _chat_sync(self, system: str, user: str, temperature: float, max_tokens: int) -> str:
-        url = f"{self.config.base_url}/chat/completions"
         response = requests.post(
-            url,
+            f"{self.config.base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",

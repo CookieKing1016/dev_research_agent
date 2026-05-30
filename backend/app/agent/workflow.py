@@ -1,24 +1,36 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.state import ResearchState
-from app.eval.evaluator import score_report
+from app.eval.evaluator import score_report_with_judge
+from app.llm.client import LLMClient
 from app.retrieval.hybrid import HybridRetriever
 from app.tools.github_tool import GitHubTool
 
-Emit = Callable[[dict[str, Any]], Awaitable[None]]  # 异步事件发送函数
+Emit = Callable[[dict[str, Any]], Awaitable[None]]
 Route = Literal["replan", "eval_result"]
 
-#对外暴露的主入口，负责接收用户输入并运行图。
+
+@dataclass
+class LLMAttempt:
+    value: Any = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.value is not None
+
+
 async def run_research_workflow(
     query: str,
     task_type: str,
     sources: list[str],
-    emit: Emit, #异步事件发送函数
+    emit: Emit,
 ) -> dict[str, Any]:
     initial_state: ResearchState = {
         "query": query,
@@ -26,10 +38,8 @@ async def run_research_workflow(
         "sources": sources,
         "replan_count": 0,
     }
-
     graph = build_research_graph(emit)
     state = await graph.ainvoke(initial_state)
-
     return {
         "query": state["query"],
         "task_type": state["task_type"],
@@ -41,7 +51,7 @@ async def run_research_workflow(
         "report": state["final_report"],
     }
 
-#负责搭建 LangGraph 工作流，包括节点和边。
+
 def build_research_graph(emit: Emit):
     workflow = StateGraph(ResearchState)
 
@@ -93,19 +103,18 @@ def build_research_graph(emit: Emit):
     )
     workflow.add_edge("replan", "retrieve_context")
     workflow.add_edge("eval_result", END)
-
     return workflow.compile()
 
 
 def route_after_critic(state: ResearchState) -> Route:
-    if should_replan(state):
-        return "replan"
-    return "eval_result"
+    return "replan" if should_replan(state) else "eval_result"
 
 
 async def plan_task(state: ResearchState, emit: Emit) -> None:
     query = state["query"]
-    plan = [
+    llm = LLMClient()
+    attempt = await llm_plan(query, state["task_type"], llm)
+    plan = attempt.value or [
         "Identify task type and expected deliverable",
         "Retrieve GitHub, document, and local knowledge evidence",
         "Analyze code or technical material flow",
@@ -116,7 +125,10 @@ async def plan_task(state: ResearchState, emit: Emit) -> None:
     if "issue" in query.lower() or "bug" in query.lower():
         plan.insert(2, "Locate relevant files, entrypoints, and risk points")
     state["plan"] = plan
-    await emit({"stage": "plan_task", "message": "PlannerAgent generated the task plan", "data": {"plan": plan}})
+    if llm.enabled and attempt.error:
+        await emit({"stage": "llm_error", "message": f"PlannerAgent LLM failed: {attempt.error}", "data": {"node": "plan_task"}})
+    mode = "llm" if attempt.ok else "rule"
+    await emit({"stage": "plan_task", "message": f"PlannerAgent generated the task plan ({mode})", "data": {"plan": plan}})
 
 
 async def retrieve_context(state: ResearchState, emit: Emit) -> None:
@@ -125,13 +137,7 @@ async def retrieve_context(state: ResearchState, emit: Emit) -> None:
     retriever = HybridRetriever(documents)
     evidence = retriever.search(state["query"], top_k=6)
     state["evidence"] = evidence
-    await emit(
-        {
-            "stage": "retrieve_context",
-            "message": f"SearchAgent retrieved {len(evidence)} evidence items",
-            "data": {"evidence": evidence},
-        }
-    )
+    await emit({"stage": "retrieve_context", "message": f"SearchAgent retrieved {len(evidence)} evidence items", "data": {"evidence": evidence}})
 
 
 async def analyze_code_or_docs(state: ResearchState, emit: Emit) -> None:
@@ -153,7 +159,13 @@ async def analyze_code_or_docs(state: ResearchState, emit: Emit) -> None:
 async def draft_report(state: ResearchState, emit: Emit) -> None:
     evidence = state.get("evidence", [])
     citations = "\n".join(f"- [{i + 1}] {item['title']}: {item['source']}" for i, item in enumerate(evidence[:4]))
-    report = f"""# Engineering Task Analysis Report
+    llm = LLMClient()
+    attempt = await llm_report(state, llm)
+    report = attempt.value
+    if llm.enabled and attempt.error:
+        await emit({"stage": "llm_error", "message": f"WriterAgent LLM failed: {attempt.error}", "data": {"node": "draft_report"}})
+    if not report:
+        report = f"""# Engineering Task Analysis Report
 
 ## Task
 {state['query']}
@@ -174,21 +186,29 @@ EvalAgent outputs quality scores.
 """
     state["draft"] = report
     state["final_report"] = report
-    await emit({"stage": "draft_report", "message": "WriterAgent generated the report draft", "data": {"chars": len(report)}})
+    mode = "llm" if attempt.ok else "template"
+    await emit({"stage": "draft_report", "message": f"WriterAgent generated the report draft ({mode})", "data": {"chars": len(report)}})
 
 
 async def critic_review(state: ResearchState, emit: Emit) -> None:
     evidence_count = len(state.get("evidence", []))
     has_citations = "[1]" in state.get("draft", "")
     needs_replan = evidence_count < 3 or not has_citations
-    critique = {
-        "passed": not needs_replan,
-        "needs_replan": needs_replan,
-        "issues": [] if not needs_replan else ["Evidence is insufficient or the report lacks citations"],
-        "suggestions": ["Add README, Issue, and code entrypoint evidence", "Export failure cases for tuning"],
-    }
+    llm = LLMClient()
+    attempt = await llm_critique(state, llm)
+    critique = attempt.value
+    if llm.enabled and attempt.error:
+        await emit({"stage": "llm_error", "message": f"CriticAgent LLM failed: {attempt.error}", "data": {"node": "critic_review"}})
+    if not critique:
+        critique = {
+            "passed": not needs_replan,
+            "needs_replan": needs_replan,
+            "issues": [] if not needs_replan else ["Evidence is insufficient or the report lacks citations"],
+            "suggestions": ["Add README, Issue, and code entrypoint evidence", "Export failure cases for tuning"],
+        }
     state["critique"] = critique
-    await emit({"stage": "critic_review", "message": "CriticAgent completed factual support checks", "data": critique})
+    mode = "llm" if attempt.ok else "rule"
+    await emit({"stage": "critic_review", "message": f"CriticAgent completed factual support checks ({mode})", "data": critique})
 
 
 def should_replan(state: ResearchState) -> bool:
@@ -198,21 +218,116 @@ def should_replan(state: ResearchState) -> bool:
 async def replan(state: ResearchState, emit: Emit) -> None:
     state["replan_count"] = state.get("replan_count", 0) + 1
     state["sources"] = state.get("sources", []) + ["local-agent-patterns", "eval-rubric"]
-    await emit(
-        {
-            "stage": "replan",
-            "message": "Evidence was insufficient, so the graph triggered one replan pass",
-            "data": {"sources": state["sources"], "replan_count": state["replan_count"]},
-        }
-    )
+    await emit({"stage": "replan", "message": "Evidence was insufficient, so the graph triggered one replan pass", "data": {"sources": state["sources"], "replan_count": state["replan_count"]}})
 
 
 async def eval_result(state: ResearchState, emit: Emit) -> None:
-    result = score_report(
+    result = await score_report_with_judge(
         query=state["query"],
         report=state.get("final_report", ""),
         evidence=state.get("evidence", []),
         critique=state.get("critique", {}),
     )
+    if result.get("judge_error"):
+        await emit({"stage": "llm_error", "message": f"EvalAgent LLM judge failed: {result['judge_error']}", "data": {"node": "eval_result"}})
     state["eval"] = result
-    await emit({"stage": "eval_result", "message": "EvalAgent produced the final score", "data": result})
+    await emit({"stage": "eval_result", "message": f"EvalAgent produced the final score ({result.get('judge_mode', 'rule')})", "data": result})
+
+
+async def llm_plan(query: str, task_type: str, llm: LLMClient) -> LLMAttempt:
+    if not llm.enabled:
+        return LLMAttempt(error="LLM_API_KEY is not configured")
+    system = "You are PlannerAgent. Return only JSON with a string array field named plan."
+    user = f"""Task type: {task_type}
+User query: {query}
+
+Create 5-7 concrete steps for a multi-agent engineering research workflow.
+The steps should mention retrieval, evidence analysis, report writing, critique, and evaluation.
+"""
+    try:
+        payload = await llm.json_chat(system, user, max_tokens=700)
+        plan = payload.get("plan")
+        if isinstance(plan, list) and all(isinstance(item, str) for item in plan):
+            return LLMAttempt(value=plan)
+        return LLMAttempt(error=f"Invalid planner JSON schema: {payload}")
+    except Exception as exc:
+        return LLMAttempt(error=compact_error(exc))
+
+
+async def llm_report(state: ResearchState, llm: LLMClient) -> LLMAttempt:
+    if not llm.enabled:
+        return LLMAttempt(error="LLM_API_KEY is not configured")
+    evidence = state.get("evidence", [])[:6]
+    evidence_text = "\n\n".join(
+        f"[{idx + 1}] {item['title']}\nSource: {item['source']}\nContent: {item['content'][:1800]}"
+        for idx, item in enumerate(evidence)
+    )
+    system = (
+        "You are WriterAgent. Write a concise Markdown engineering report. "
+        "Use citations like [1], [2] whenever making factual claims. "
+        "Do not invent facts beyond the provided evidence."
+    )
+    user = f"""User task:
+{state['query']}
+
+Plan:
+{state.get('plan', [])}
+
+Analysis:
+{state.get('analysis', {})}
+
+Evidence:
+{evidence_text}
+
+Write sections:
+1. Task
+2. Evidence-backed architecture notes
+3. Reproduction or reading path
+4. Resume-ready improvement ideas
+5. Risks and next steps
+"""
+    try:
+        return LLMAttempt(value=await llm.chat(system, user, temperature=0.2, max_tokens=1800))
+    except Exception as exc:
+        return LLMAttempt(error=compact_error(exc))
+
+
+async def llm_critique(state: ResearchState, llm: LLMClient) -> LLMAttempt:
+    if not llm.enabled:
+        return LLMAttempt(error="LLM_API_KEY is not configured")
+    system = (
+        "You are CriticAgent. Return only JSON with fields: "
+        "passed(boolean), needs_replan(boolean), issues(array of strings), suggestions(array of strings)."
+    )
+    user = f"""User task:
+{state['query']}
+
+Evidence count: {len(state.get('evidence', []))}
+Report:
+{state.get('draft', '')[:6000]}
+
+Judge whether the report is supported by citations, answers the task, and has enough evidence.
+Set needs_replan=true only if missing citations, weak evidence, or not answering the task.
+"""
+    try:
+        payload = await llm.json_chat(system, user, max_tokens=800)
+        return LLMAttempt(
+            value={
+                "passed": bool(payload.get("passed")),
+                "needs_replan": bool(payload.get("needs_replan")),
+                "issues": _string_list(payload.get("issues")),
+                "suggestions": _string_list(payload.get("suggestions")),
+            }
+        )
+    except Exception as exc:
+        return LLMAttempt(error=compact_error(exc))
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def compact_error(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"[:500]

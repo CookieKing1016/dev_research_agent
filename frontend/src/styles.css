@@ -176,6 +176,28 @@ h2 {
   margin-top: 16px;
 }
 
+.artifacts {
+  margin-top: 16px;
+}
+
+.artifactList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.artifactList a {
+  border: 1px solid #c9d4e5;
+  border-radius: 6px;
+  color: #176b87;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.artifactList a:hover {
+  background: #e8f3f6;
+}
+
 .report pre {
   white-space: pre-wrap;
   word-break: break-word;
